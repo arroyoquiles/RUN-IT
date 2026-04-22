@@ -168,6 +168,20 @@ body{max-width:480px;margin:0 auto;position:relative}
 /* ── REF INFO ── */
 .ref-row{font-size:12px;color:var(--text2);line-height:1.9;display:flex;gap:6px}
 .ref-ico{flex-shrink:0}
+
+/* ── EDIT OVERLAY ── */
+.edit-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:400;display:flex;align-items:flex-end;justify-content:center}
+.edit-sheet{background:var(--bg2);border-radius:18px 18px 0 0;padding:20px 18px 36px;width:100%;max-width:480px;border-top:2px solid #2a4a2a}
+.edit-sheet-title{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:900;letter-spacing:1px;text-transform:uppercase;margin-bottom:16px;color:var(--green)}
+.edit-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.edit-label{flex:1;font-size:14px;color:var(--text);font-weight:500}
+.edit-input{background:var(--bg);border:1px solid #2a4a2a;border-radius:8px;color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:800;text-align:center;padding:6px 0;width:70px;outline:none;-moz-appearance:textfield}
+.edit-input::-webkit-inner-spin-button,.edit-input::-webkit-outer-spin-button{-webkit-appearance:none}
+.edit-input:focus{border-color:var(--green)}
+.edit-btns{display:flex;gap:8px;margin-top:16px}
+.edit-cancel{flex:1;background:var(--card);border:1px solid #2a3a2a;border-radius:8px;color:var(--text2);font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1px;padding:11px;cursor:pointer}
+.edit-save{flex:2;background:var(--green);border:none;border-radius:8px;color:#080e08;font-family:'Barlow Condensed',sans-serif;font-size:14px;font-weight:800;letter-spacing:1px;padding:11px;cursor:pointer}
+.edit-reset{background:none;border:none;color:var(--muted);font-size:11px;letter-spacing:1px;font-family:'Barlow Condensed',sans-serif;cursor:pointer;text-decoration:underline;display:block;margin-top:10px;text-align:center;width:100%}
 </style>
 </head>
 <body>
@@ -257,6 +271,23 @@ body{max-width:480px;margin:0 auto;position:relative}
     </div>
   </div>
   <div class="detail-body" id="d-body"></div>
+</div>
+
+<!-- EDIT SHEET OVERLAY -->
+<div class="edit-overlay" id="edit-overlay" style="display:none" onclick="closeEdit(event)">
+  <div class="edit-sheet" onclick="event.stopPropagation()">
+    <div class="edit-sheet-title">✏️ Edit Sets</div>
+    <div class="edit-row"><span class="edit-label">Sets</span><input class="edit-input" id="e-sets" type="number" min="1" max="10" inputmode="numeric"/></div>
+    <div class="edit-row"><span class="edit-label">Push Ups</span><input class="edit-input" id="e-pu" type="number" min="0" inputmode="numeric"/></div>
+    <div class="edit-row"><span class="edit-label">Sit Ups</span><input class="edit-input" id="e-su" type="number" min="0" inputmode="numeric"/></div>
+    <div class="edit-row"><span class="edit-label" id="e-leg-lbl">Squats</span><input class="edit-input" id="e-legs" type="number" min="0" inputmode="numeric"/></div>
+    <div class="edit-row"><span class="edit-label">Plank (e.g. 30s)</span><input class="edit-input" id="e-plank" type="text" style="width:80px;font-size:16px"/></div>
+    <div class="edit-btns">
+      <button class="edit-cancel" onclick="closeEdit()">Cancel</button>
+      <button class="edit-save" onclick="saveEdit()">Save</button>
+    </div>
+    <button class="edit-reset" onclick="resetEdit()">Reset to original</button>
+  </div>
 </div>
 
 <!-- BOTTOM NAV -->
@@ -380,10 +411,13 @@ const WEEKS = [
 // ============================================================
 const LS_C = 'bmt_completed_v2';
 const LS_P = 'bmt_progress_v2';
+const LS_E = 'bmt_edits_v1';
 function getC(){try{return JSON.parse(localStorage.getItem(LS_C)||'{}')}catch{return{}}}
 function setC(d){localStorage.setItem(LS_C,JSON.stringify(d))}
 function getP(){try{return JSON.parse(localStorage.getItem(LS_P)||'[]')}catch{return[]}}
 function setP(d){localStorage.setItem(LS_P,JSON.stringify(d))}
+function getE(){try{return JSON.parse(localStorage.getItem(LS_E)||'{}')}catch{return{}}}
+function setE(d){localStorage.setItem(LS_E,JSON.stringify(d))}
 
 // ============================================================
 // UTILS
@@ -419,8 +453,8 @@ function buildChecks(w, dayName, dd){
   if(dd.extra_core) items.push({id:'core',title:'⚡ Core Extra',desc:'2 rondas · 4 ejercicios',core:true});
   if(dd.pm){
     const p=dd.pm, ll=p.legType==='Lunges'?'Estocadas':'Sentadillas';
-    items.push({id:'pm',title:`💪 Calistenia PM — ${p.sets} Series`,
-      desc:`${p.pu} Push Ups · ${p.su} Sit Ups · ${p.legs} ${ll} · Plank ${p.plank}`,pm:p});
+    items.push({id:'pm',title:`💪 Calisthenics PM — ${p.sets} Sets`,
+      desc:`${p.pu} Push Ups · ${p.su} Sit Ups · ${p.legs} ${p.legType==='Lunges'?'Lunges':'Squats'} · Plank ${p.plank}`,pm:p});
   }
   return items;
 }
@@ -465,7 +499,7 @@ function renderPlan(){
       const allDone=total>0&&done===total;
       const tags=(dd.run?'<span class="tag run">Run</span>':'')+(dd.pm?'<span class="tag strength">Fuerza</span>':'')+(dd.extra_core?'<span class="tag core">Core</span>':'');
       const bar=total>0?`<div class="prog-bar-wrap"><div class="prog-bar-fill" style="width:${Math.round(done/total*100)}%"></div></div>`:'';
-      const pmSub=dd.pm?`<div class="day-sub">PM: ${dd.pm.sets}×(${dd.pm.pu} Push Ups · ${dd.pm.su} Sit Ups · ${dd.pm.legs} ${dd.pm.legType==='Lunges'?'Estocadas':'Sentadillas'} · Plank ${dd.pm.plank})</div>`:'';
+      const pmSub=dd.pm?`<div class="day-sub">PM: ${dd.pm.sets}×(${dd.pm.pu} Push Ups · ${dd.pm.su} Sit Ups · ${dd.pm.legs} ${dd.pm.legType==='Lunges'?'Lunges':'Squats'} · Plank ${dd.pm.plank})</div>`:'';
       daysHtml+=`<div class="day-card${allDone?' all-done':''}" onclick="openDetail(${w},'${d}')">
         <span class="day-lbl">${DAY_SHORT[d]}</span>
         <div class="day-info">
@@ -519,8 +553,10 @@ function toggleWeek(h){
 // DAY DETAIL
 // ============================================================
 let curDetail=null;
+let savedScrollY=0;
 function openDetail(w,day){
   curDetail={w,day};
+  savedScrollY=window.scrollY;
   const meta=WEEKS[w-1];
   document.getElementById('d-week-lbl').textContent=meta.group;
   document.getElementById('d-day-lbl').textContent=`${meta.label} · ${DN[day]||day}`;
@@ -531,8 +567,26 @@ function openDetail(w,day){
 function closeDetail(){
   document.getElementById('day-detail').classList.remove('open');
   document.body.style.overflow='';
+  const w=curDetail?curDetail.w:null;
   curDetail=null;
   renderPlan();
+  // restore scroll and keep the week open
+  requestAnimationFrame(()=>{
+    if(w){
+      // re-open the week section
+      const headers=document.querySelectorAll('.week-header');
+      headers.forEach(h=>{
+        const badge=h.querySelector('.week-badge');
+        if(badge&&badge.textContent.trim()===`S${w}`){
+          if(!h.classList.contains('open')){
+            h.classList.add('open');
+            h.nextElementSibling.classList.add('open');
+          }
+        }
+      });
+    }
+    window.scrollTo({top:savedScrollY,behavior:'instant'});
+  });
 }
 function renderDetail(w,day){
   const meta=WEEKS[w-1];
@@ -569,25 +623,32 @@ function renderDetail(w,day){
   items.forEach(it=>{
     const k=dayKey(w,day)+'_'+it.id;
     const done=!!compl[k];
-    const legLabel=it.pm?(it.pm.legType==='Lunges'?'Estocadas':'Sentadillas'):'';
+    const legLabel=it.pm?(it.pm.legType==='Lunges'?'Lunges':'Squats'):'';
+    // apply any user edits
+    const editKey=`${dayKey(w,day)}_pm`;
+    const edits=getE();
+    const ep=it.pm?(edits[editKey]||it.pm):null;
     const breakdown=it.pm?`<div class="set-block">
       <div class="set-hdr">
-        <span class="set-hdr-series">${it.pm.sets} Series</span>
-        <span class="set-hdr-rest">⏸ Rest 60–90s</span>
+        <span class="set-hdr-series">${ep.sets} Sets</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="set-hdr-rest">⏸ Rest 60–90s</span>
+          <button onclick="event.stopPropagation();openEdit('${editKey}',${w},'${day}')" style="background:none;border:1px solid #2a4a2a;border-radius:5px;color:var(--green);font-size:11px;padding:2px 7px;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:.5px">✏️ Edit</button>
+        </div>
       </div>
-      <div class="ex-row"><span class="ex-ico">💪</span><span class="ex-name">Push Ups</span><span class="ex-num">${it.pm.pu}</span></div>
-      <div class="ex-row"><span class="ex-ico">🔥</span><span class="ex-name">Sit Ups</span><span class="ex-num">${it.pm.su}</span></div>
-      <div class="ex-row"><span class="ex-ico">🦵</span><span class="ex-name">${legLabel}</span><span class="ex-num">${it.pm.legs}</span></div>
-      <div class="ex-row"><span class="ex-ico">⏱</span><span class="ex-name">Plank</span><span class="ex-num">${it.pm.plank}</span></div>
+      <div class="ex-row"><span class="ex-ico">💪</span><span class="ex-name">Push Ups</span><span class="ex-num">${ep.pu}</span></div>
+      <div class="ex-row"><span class="ex-ico">🔥</span><span class="ex-name">Sit Ups</span><span class="ex-num">${ep.su}</span></div>
+      <div class="ex-row"><span class="ex-ico">🦵</span><span class="ex-name">${legLabel}</span><span class="ex-num">${ep.legs}</span></div>
+      <div class="ex-row"><span class="ex-ico">⏱</span><span class="ex-name">Plank</span><span class="ex-num">${ep.plank}</span></div>
     </div>`:it.core?`<div class="set-block">
       <div class="set-hdr">
-        <span class="set-hdr-series">2 Rondas</span>
-        <span class="set-hdr-rest">⏸ Sin descanso entre ejercicios</span>
+        <span class="set-hdr-series">2 Rounds</span>
+        <span class="set-hdr-rest">⏸ No rest between exercises</span>
       </div>
-      <div class="ex-row"><span class="ex-ico">🧱</span><span class="ex-name">Plank Frontal</span><span class="ex-num" style="font-size:17px">30–45s</span></div>
-      <div class="ex-row"><span class="ex-ico">◀️</span><span class="ex-name">Plank Lateral Izq</span><span class="ex-num" style="font-size:17px">20–30s</span></div>
-      <div class="ex-row"><span class="ex-ico">▶️</span><span class="ex-name">Plank Lateral Der</span><span class="ex-num" style="font-size:17px">20–30s</span></div>
-      <div class="ex-row"><span class="ex-ico">🐛</span><span class="ex-name">Dead Bug (c/lado)</span><span class="ex-num">10</span></div>
+      <div class="ex-row"><span class="ex-ico">🧱</span><span class="ex-name">Front Plank</span><span class="ex-num" style="font-size:17px">30–45s</span></div>
+      <div class="ex-row"><span class="ex-ico">◀️</span><span class="ex-name">Side Plank Left</span><span class="ex-num" style="font-size:17px">20–30s</span></div>
+      <div class="ex-row"><span class="ex-ico">▶️</span><span class="ex-name">Side Plank Right</span><span class="ex-num" style="font-size:17px">20–30s</span></div>
+      <div class="ex-row"><span class="ex-ico">🐛</span><span class="ex-name">Dead Bug (each side)</span><span class="ex-num">10</span></div>
     </div>`:'';
     html+=`<div class="check-item${done?' done':''}" onclick="toggleChk('${k}',${w},'${day}')">
       <div class="chkbox"></div>
@@ -769,6 +830,54 @@ function pinWeek(w){
 }
 function updateBadge(){
   document.getElementById('header-badge').textContent=`Sem ${getCurWeek()}`;
+}
+
+// ============================================================
+// EDIT SETS
+// ============================================================
+let curEditKey=null, curEditW=null, curEditDay=null, curEditOriginal=null;
+function openEdit(editKey, w, day){
+  const meta=WEEKS[w-1];
+  const dd=BLK[meta.blk][day];
+  if(!dd||!dd.pm)return;
+  const edits=getE();
+  const ep=edits[editKey]||dd.pm;
+  curEditKey=editKey; curEditW=w; curEditDay=day;
+  curEditOriginal=dd.pm;
+  document.getElementById('e-sets').value=ep.sets;
+  document.getElementById('e-pu').value=ep.pu;
+  document.getElementById('e-su').value=ep.su;
+  document.getElementById('e-legs').value=ep.legs;
+  document.getElementById('e-plank').value=ep.plank;
+  document.getElementById('e-leg-lbl').textContent=dd.pm.legType==='Lunges'?'Lunges':'Squats';
+  document.getElementById('edit-overlay').style.display='flex';
+}
+function closeEdit(e){
+  if(e&&e.target!==document.getElementById('edit-overlay'))return;
+  document.getElementById('edit-overlay').style.display='none';
+}
+function saveEdit(){
+  const edits=getE();
+  edits[curEditKey]={
+    sets:parseInt(document.getElementById('e-sets').value)||curEditOriginal.sets,
+    pu:parseInt(document.getElementById('e-pu').value)||curEditOriginal.pu,
+    su:parseInt(document.getElementById('e-su').value)||curEditOriginal.su,
+    legs:parseInt(document.getElementById('e-legs').value)||curEditOriginal.legs,
+    plank:document.getElementById('e-plank').value||curEditOriginal.plank,
+    legType:curEditOriginal.legType
+  };
+  setE(edits);
+  document.getElementById('edit-overlay').style.display='none';
+  renderDetail(curEditW,curEditDay);
+  toast('✏️ Saved');
+}
+function resetEdit(){
+  const edits=getE();
+  delete edits[curEditKey];
+  setE(edits);
+  document.getElementById('edit-overlay').style.display='none';
+  renderDetail(curEditW,curEditDay);
+  toast('↩️ Reset to original');
 }
 
 // ============================================================
