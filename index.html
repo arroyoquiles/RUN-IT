@@ -367,18 +367,32 @@ function getCurrentWeekIdx(){
   return idx;
 }
 
+const HAS_CLAUDE_STORAGE = (typeof window !== 'undefined') && window.storage && typeof window.storage.get === 'function';
+
 async function loadState(){
   try{
-    const res = await window.storage.get(STORE_KEY, false);
-    if(res && res.value){
-      const parsed = JSON.parse(res.value);
+    let raw = null;
+    if(HAS_CLAUDE_STORAGE){
+      const res = await window.storage.get(STORE_KEY, false);
+      raw = res && res.value;
+    } else if(typeof localStorage !== 'undefined'){
+      raw = localStorage.getItem(STORE_KEY);
+    }
+    if(raw){
+      const parsed = JSON.parse(raw);
       state = { done: parsed.done || {}, currentWeekId: parsed.currentWeekId || null };
     }
   }catch(e){ /* no saved state yet */ }
 }
 async function saveState(){
-  try{ await window.storage.set(STORE_KEY, JSON.stringify(state), false); }
-  catch(e){ console.error('No se pudo guardar el progreso', e); }
+  const json = JSON.stringify(state);
+  try{
+    if(HAS_CLAUDE_STORAGE){
+      await window.storage.set(STORE_KEY, json, false);
+    } else if(typeof localStorage !== 'undefined'){
+      localStorage.setItem(STORE_KEY, json);
+    }
+  }catch(e){ console.error('No se pudo guardar el progreso', e); }
 }
 
 function checkIcon(){
@@ -536,11 +550,34 @@ document.getElementById('resetBtn').addEventListener('click', async ()=>{
   renderAll();
 });
 
+async function checkStorageWorks(){
+  const testKey = '__storage_test__';
+  try{
+    if(HAS_CLAUDE_STORAGE){
+      await window.storage.set(testKey, '1', false);
+      return true;
+    } else if(typeof localStorage !== 'undefined'){
+      localStorage.setItem(testKey, '1');
+      localStorage.removeItem(testKey);
+      return true;
+    }
+    return false;
+  }catch(e){ return false; }
+}
+
 (async function init(){
   await loadState();
   const idx = getCurrentWeekIdx();
   activeWeekIdx = idx>=0 ? idx : 0;
   renderAll();
+
+  const storageWorks = await checkStorageWorks();
+  if(!storageWorks){
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#3A1F1A;border:1px solid #7A2A1F;color:#F4A796;font-family:JetBrains Mono,monospace;font-size:12px;padding:10px 14px;border-radius:10px;margin:0 0 18px;';
+    banner.textContent = '⚠ No se detectó almacenamiento disponible en este navegador (revisa si el modo privado está activo). Tus marcas no se guardarán al cerrar esta pestaña.';
+    document.querySelector('.wrap').insertBefore(banner, document.getElementById('weekContent'));
+  }
 })();
 </script>
 </body>
